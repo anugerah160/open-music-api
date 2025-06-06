@@ -5,10 +5,10 @@ const NotFoundError = require("../../exceptions/NotFoundError");
 const AuthorizationError = require("../../exceptions/AuthorizationError");
 
 class PlaylistsService {
-  constructor(collaborationService, cacheService) {
+  // KEMBALIKAN CONSTRUCTOR KE BENTUK SEDERHANA
+  constructor(collaborationService) {
     this._pool = new Pool();
     this._collaborationService = collaborationService;
-    this._cacheService = cacheService; // Untuk caching jika ada
   }
 
   async addPlaylist({ name, owner }) {
@@ -28,9 +28,10 @@ class PlaylistsService {
     const query = {
       text: `SELECT p.id, p.name, u.username
              FROM playlists p
-             LEFT JOIN collaborations c ON c.playlist_id = p.id
              LEFT JOIN users u ON u.id = p.owner
-             WHERE p.owner = $1 OR c.user_id = $1`,
+             LEFT JOIN collaborations c ON c.playlist_id = p.id
+             WHERE p.owner = $1 OR c.user_id = $1
+             GROUP BY p.id, u.username`,
       values: [owner],
     };
     const result = await this._pool.query(query);
@@ -123,17 +124,25 @@ class PlaylistsService {
       try {
         await this._collaborationService.verifyCollaborator(playlistId, userId);
       } catch {
-        throw error;
+        throw new AuthorizationError(
+          "Anda tidak berhak mengakses resource ini"
+        );
       }
     }
   }
 
-  // Fungsi untuk fitur opsional: Activities
   async addPlaylistActivity(playlistId, songId, userId, action) {
     const id = `pact-${nanoid(16)}`;
     const query = {
-      text: "INSERT INTO playlist_song_activities (id, playlist_id, song_id, user_id, action) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-      values: [id, playlistId, songId, userId, action],
+      text: "INSERT INTO playlist_song_activities (id, playlist_id, song_id, user_id, action, time) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+      values: [
+        id,
+        playlistId,
+        songId,
+        userId,
+        action,
+        new Date().toISOString(),
+      ],
     };
     await this._pool.query(query);
   }
@@ -141,11 +150,11 @@ class PlaylistsService {
   async getPlaylistActivities(playlistId) {
     const query = {
       text: `SELECT u.username, s.title, psa.action, psa.time
-                 FROM playlist_song_activities psa
-                 JOIN users u ON psa.user_id = u.id
-                 JOIN songs s ON psa.song_id = s.id
-                 WHERE psa.playlist_id = $1
-                 ORDER BY psa.time ASC`,
+             FROM playlist_song_activities psa
+             JOIN users u ON psa.user_id = u.id
+             JOIN songs s ON psa.song_id = s.id
+             WHERE psa.playlist_id = $1
+             ORDER BY psa.time ASC`,
       values: [playlistId],
     };
     const result = await this._pool.query(query);

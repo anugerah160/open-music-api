@@ -1,8 +1,10 @@
 const InvariantError = require("../../exceptions/InvariantError");
 
 class PlaylistsHandler {
-  constructor(service, validator) {
-    this._service = service;
+  // TAMBAHKAN songsService DI CONSTRUCTOR
+  constructor(playlistsService, songsService, validator) {
+    this._service = playlistsService;
+    this._songsService = songsService; // Simpan songsService
     this._validator = validator;
 
     this.postPlaylistHandler = this.postPlaylistHandler.bind(this);
@@ -73,9 +75,11 @@ class PlaylistsHandler {
     const { songId } = request.payload;
     const { id: credentialId } = request.auth.credentials;
 
+    // VERIFIKASI LAGU ADA DI SINI (DI HANDLER)
+    await this._songsService.getSongById(songId);
+
     await this._service.verifyPlaylistAccess(playlistId, credentialId);
     await this._service.addSongToPlaylist(playlistId, songId);
-    // Fitur opsional: catat aktivitas
     await this._service.addPlaylistActivity(
       playlistId,
       songId,
