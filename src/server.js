@@ -1,15 +1,16 @@
 require("dotenv").config();
-
+const path = require("path");
 const Hapi = require("@hapi/hapi");
 const Jwt = require("@hapi/jwt");
+const Inert = require("@hapi/inert");
 
-// Exceptions
 const ClientError = require("./exceptions/ClientError");
 
 // Albums
 const albums = require("./api/albums");
 const AlbumsService = require("./services/postgres/AlbumsService");
 const albumsValidator = require("./validator/albums");
+const StorageService = require("./services/storage/StorageService");
 
 // Songs
 const songs = require("./api/songs");
@@ -27,37 +28,41 @@ const AuthenticationsService = require("./services/postgres/AuthenticationsServi
 const TokenManager = require("./tokenize/TokenManager");
 const authenticationsValidator = require("./validator/authentications");
 
-// Collaborations
-const collaborations = require("./api/collaborations");
-const CollaborationsService = require("./services/postgres/CollaborationsService");
-const collaborationsValidator = require("./validator/collaborations");
-
 // Playlists
 const playlists = require("./api/playlists");
 const PlaylistsService = require("./services/postgres/PlaylistsService");
 const playlistsValidator = require("./validator/playlists");
 
+// Collaborations
+const collaborations = require("./api/collaborations");
+const CollaborationsService = require("./services/postgres/CollaborationsService");
+const collaborationsValidator = require("./validator/collaborations");
+
+// Exports
+const _exports = require("./api/exports");
+const ProducerService = require("./services/rabbitmq/ProducerService");
+const exportsValidator = require("./validator/exports");
+
+// Cache
+const CacheService = require("./services/redis/CacheService");
+
 const init = async () => {
-  // Inisialisasi service dengan urutan yang benar
+  const cacheService = new CacheService();
+  const storageService = new StorageService();
   const usersService = new UsersService();
   const authenticationsService = new AuthenticationsService();
   const collaborationsService = new CollaborationsService();
   const songsService = new SongsService();
-  const albumsService = new AlbumsService();
-  // PlaylistsService membutuhkan collaborationsService untuk verifikasi akses
+  const albumsService = new AlbumsService(cacheService);
   const playlistsService = new PlaylistsService(collaborationsService);
 
   const server = Hapi.server({
     port: process.env.PORT,
     host: process.env.HOST,
-    routes: {
-      cors: {
-        origin: ["*"],
-      },
-    },
+    routes: { cors: { origin: ["*"] } },
   });
 
-  await server.register([{ plugin: Jwt }]);
+  await server.register([{ plugin: Jwt }, { plugin: Inert }]);
 
   server.auth.strategy("openmusic_jwt", "jwt", {
     keys: process.env.ACCESS_TOKEN_KEY,
@@ -68,10 +73,24 @@ const init = async () => {
     }),
   });
 
+  server.route({
+    method: "GET",
+    path: "/uploads/{param*}",
+    handler: {
+      directory: {
+        path: path.resolve(__dirname, "storage/app"),
+      },
+    },
+  });
+
   await server.register([
     {
       plugin: albums,
-      options: { service: albumsService, validator: albumsValidator },
+      options: {
+        service: albumsService,
+        storageService,
+        validator: albumsValidator,
+      },
     },
     {
       plugin: songs,
@@ -103,8 +122,16 @@ const init = async () => {
       options: {
         collaborationsService,
         playlistsService,
-        usersService, // PASTIKAN usersService di-pass ke plugin kolaborasi
+        usersService,
         validator: collaborationsValidator,
+      },
+    },
+    {
+      plugin: _exports,
+      options: {
+        producerService: ProducerService,
+        playlistsService,
+        validator: exportsValidator,
       },
     },
   ]);
