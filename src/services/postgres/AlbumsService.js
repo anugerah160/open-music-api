@@ -12,10 +12,9 @@ class AlbumsService {
   async addAlbum({ name, year }) {
     const id = `album-${nanoid(16)}`;
     const query = {
-      text: "INSERT INTO albums VALUES($1, $2, $3) RETURNING id",
+      text: "INSERT INTO albums(id, name, year) VALUES($1, $2, $3) RETURNING id",
       values: [id, name, year],
     };
-
     const result = await this._pool.query(query);
     if (!result.rows[0].id) {
       throw new InvariantError("Album gagal ditambahkan");
@@ -25,11 +24,7 @@ class AlbumsService {
 
   async getAlbumById(id) {
     const query = {
-      text: `SELECT a.id, a.name, a.year, a.cover_url as "coverUrl",
-             s.id as song_id, s.title as song_title, s.performer as song_performer
-             FROM albums a
-             LEFT JOIN songs s ON s.album_id = a.id
-             WHERE a.id = $1`,
+      text: "SELECT id, name, year, cover_url FROM albums WHERE id = $1",
       values: [id],
     };
     const result = await this._pool.query(query);
@@ -38,21 +33,20 @@ class AlbumsService {
       throw new NotFoundError("Album tidak ditemukan");
     }
 
-    const album = {
-      id: result.rows[0].id,
-      name: result.rows[0].name,
-      year: result.rows[0].year,
-      coverUrl: result.rows[0].coverUrl,
-      songs: result.rows[0].song_id
-        ? result.rows.map((row) => ({
-            id: row.song_id,
-            title: row.song_title,
-            performer: row.song_performer,
-          }))
-        : [],
+    const album = result.rows[0];
+    const songsQuery = {
+      text: "SELECT id, title, performer FROM songs WHERE album_id = $1",
+      values: [id],
     };
+    const songsResult = await this._pool.query(songsQuery);
 
-    return album;
+    return {
+      id: album.id,
+      name: album.name,
+      year: album.year,
+      coverUrl: album.cover_url,
+      songs: songsResult.rows,
+    };
   }
 
   async editAlbumById(id, { name, year }) {
@@ -79,73 +73,77 @@ class AlbumsService {
 
   async addAlbumCover(id, coverUrl) {
     const query = {
-      text: "UPDATE albums SET cover_url = $1 WHERE id = $2 RETURNING id",
+      text: "UPDATE albums SET cover_url = $1 WHERE id = $2",
       values: [coverUrl, id],
     };
-    const result = await this._pool.query(query);
-    if (!result.rows.length) {
-      throw new NotFoundError("Gagal memperbarui sampul. Id tidak ditemukan.");
-    }
+    await this._pool.query(query);
   }
 
-  async likeAlbum(albumId, userId) {
-    // Verif album
-    await this.getAlbumById(albumId);
+  async addAlbumLike(albumId, userId) {
+    const albumCheckQuery = {
+      text: "SELECT id FROM albums WHERE id = $1",
+      values: [albumId],
+    };
+    const albumCheckResult = await this._pool.query(albumCheckQuery);
+    if (!albumCheckResult.rows.length) {
+      throw new NotFoundError("Album tidak ditemukan");
+    }
+
+    const likeCheckQuery = {
+      text: "SELECT id FROM user_album_likes WHERE user_id = $1 AND album_id = $2",
+      values: [userId, albumId],
+    };
+    const likeCheckResult = await this._pool.query(likeCheckQuery);
+    if (likeCheckResult.rows.length > 0) {
+      throw new InvariantError("Anda sudah menyukai album ini");
+    }
 
     const id = `like-${nanoid(16)}`;
     const query = {
-      text: "INSERT INTO user_album_likes (id, user_id, album_id) VALUES ($1, $2, $3) RETURNING id",
+      text: "INSERT INTO user_album_likes (id, user_id, album_id) VALUES ($1, $2, $3)",
       values: [id, userId, albumId],
     };
-    try {
-      const result = await this._pool.query(query);
-      // Del cache
-      await this._cacheService.delete(`likes:${albumId}`);
-      return result.rows[0].id;
-    } catch (error) {
-      if (error.code === "23505") {
-        throw new InvariantError("Anda sudah menyukai album ini");
-      }
-      throw error;
-    }
+    await this._pool.query(query);
+
+    await this._cacheService.delete(`album-likes:${albumId}`);
   }
 
-  async unlikeAlbum(albumId, userId) {
+  async deleteAlbumLike(albumId, userId) {
     const query = {
       text: "DELETE FROM user_album_likes WHERE album_id = $1 AND user_id = $2 RETURNING id",
       values: [albumId, userId],
     };
     const result = await this._pool.query(query);
     if (!result.rows.length) {
-      throw new InvariantError(
-        "Gagal batal menyukai album. Like tidak ditemukan."
-      );
+      throw new NotFoundError("Gagal batal menyukai. Like tidak ditemukan.");
     }
-    // Del cache
-    await this._cacheService.delete(`likes:${albumId}`);
+    await this._cacheService.delete(`album-likes:${albumId}`);
   }
 
-  async getAlbumLikes(albumId) {
+  async getAlbumLikesCount(albumId) {
     try {
-      // Try get from cache dulu
-      const result = await this._cacheService.get(`likes:${albumId}`);
-      return { count: JSON.parse(result), fromCache: true };
+      const likes = await this._cacheService.get(`album-likes:${albumId}`);
+      return { count: JSON.parse(likes), source: "cache" };
     } catch (error) {
-      // If fail, get from database
+      // jika gagal dari cache, ambil dari DB
+      const albumCheckQuery = {
+        text: "SELECT id FROM albums WHERE id = $1",
+        values: [albumId],
+      };
+      const albumCheckResult = await this._pool.query(albumCheckQuery);
+      if (!albumCheckResult.rows.length) {
+        throw new NotFoundError("Album tidak ditemukan");
+      }
+
       const query = {
-        text: "SELECT COUNT(*) FROM user_album_likes WHERE album_id = $1",
+        text: 'SELECT COUNT(id) as "likesCount" FROM user_album_likes WHERE album_id = $1',
         values: [albumId],
       };
       const result = await this._pool.query(query);
-      const likesCount = parseInt(result.rows[0].count, 10);
+      const likesCount = parseInt(result.rows[0].likesCount, 10);
 
-      // Simpan cache
-      await this._cacheService.set(
-        `likes:${albumId}`,
-        JSON.stringify(likesCount)
-      );
-
-      return { count: likesCount, fromCache: false };
+      await this._cacheService.set(`album-likes:${albumId}`, likesCount);
+      return { count: likesCount, source: "db" };
     }
   }
 }

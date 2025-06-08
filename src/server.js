@@ -2,7 +2,7 @@ require("dotenv").config();
 const path = require("path");
 const Hapi = require("@hapi/hapi");
 const Jwt = require("@hapi/jwt");
-const Inert = require("@hapi/inert");
+const Inert = require("@hapi/inert"); // Pastikan Inert diimpor
 
 const ClientError = require("./exceptions/ClientError");
 
@@ -10,30 +10,22 @@ const ClientError = require("./exceptions/ClientError");
 const albums = require("./api/albums");
 const AlbumsService = require("./services/postgres/AlbumsService");
 const albumsValidator = require("./validator/albums");
-const StorageService = require("./services/storage/StorageService");
+const StorageService = require("./services/storage/StorageService"); // Import StorageService
 
-// Songs
+// ... (semua import lain dari V2)
 const songs = require("./api/songs");
 const SongsService = require("./services/postgres/SongsService");
 const songsValidator = require("./validator/songs");
-
-// Users
 const users = require("./api/users");
 const UsersService = require("./services/postgres/UsersService");
 const usersValidator = require("./validator/users");
-
-// Authentications
 const authentications = require("./api/authentications");
 const AuthenticationsService = require("./services/postgres/AuthenticationsService");
 const TokenManager = require("./tokenize/TokenManager");
 const authenticationsValidator = require("./validator/authentications");
-
-// Playlists
 const playlists = require("./api/playlists");
 const PlaylistsService = require("./services/postgres/PlaylistsService");
 const playlistsValidator = require("./validator/playlists");
-
-// Collaborations
 const collaborations = require("./api/collaborations");
 const CollaborationsService = require("./services/postgres/CollaborationsService");
 const collaborationsValidator = require("./validator/collaborations");
@@ -53,7 +45,7 @@ const init = async () => {
   const authenticationsService = new AuthenticationsService();
   const collaborationsService = new CollaborationsService();
   const songsService = new SongsService();
-  const albumsService = new AlbumsService(cacheService);
+  const albumsService = new AlbumsService(cacheService); // AlbumsService butuh cache
   const playlistsService = new PlaylistsService(collaborationsService);
 
   const server = Hapi.server({
@@ -73,12 +65,13 @@ const init = async () => {
     }),
   });
 
+  // Rute untuk menyajikan gambar dari direktori uploads
   server.route({
     method: "GET",
     path: "/uploads/{param*}",
     handler: {
       directory: {
-        path: path.resolve(__dirname, "storage/app"),
+        path: path.resolve(__dirname, "storage/app/uploads"),
       },
     },
   });
@@ -88,10 +81,11 @@ const init = async () => {
       plugin: albums,
       options: {
         service: albumsService,
-        storageService,
+        storageService, // Pass storageService ke plugin albums
         validator: albumsValidator,
       },
     },
+    // ... (registrasi plugin lain dari V2)
     {
       plugin: songs,
       options: { service: songsService, validator: songsValidator },

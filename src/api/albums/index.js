@@ -4,7 +4,7 @@ const validator = require("../../validator/albums");
 
 module.exports = {
   name: "albums",
-  version: "1.0.0",
+  version: "3.0.0",
   register: async (server, { service, storageService }) => {
     const albumsHandler = new AlbumsHandler(service, storageService, validator);
     server.route(routes(albumsHandler));

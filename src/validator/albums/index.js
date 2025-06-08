@@ -5,7 +5,6 @@ const AlbumPayloadSchema = Joi.object({
   year: Joi.number().integer().min(1900).max(2025).required(),
 });
 
-// New validator untuk sampul
 const ImageHeadersSchema = Joi.object({
   "content-type": Joi.string()
     .valid(

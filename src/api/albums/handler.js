@@ -22,10 +22,7 @@ class AlbumsHandler {
     );
     if (error) throw new InvariantError(error.message);
     const albumId = await this._service.addAlbum(request.payload);
-    const response = h.response({
-      status: "success",
-      data: { albumId },
-    });
+    const response = h.response({ status: "success", data: { albumId } });
     response.code(201);
     return response;
   }
@@ -59,7 +56,9 @@ class AlbumsHandler {
     const { error } = this._validator.ImageHeadersSchema.validate(
       cover.hapi.headers
     );
-    if (error) throw new InvariantError(error.message);
+    if (error) {
+      throw new InvariantError(error.message);
+    }
 
     const filename = await this._storageService.writeFile(cover, cover.hapi);
     const fileUrl = `http://${process.env.HOST}:${process.env.PORT}/uploads/images/${filename}`;
@@ -82,7 +81,7 @@ class AlbumsHandler {
 
     const response = h.response({
       status: "success",
-      message: "Berhasil menyukai album",
+      message: "Album berhasil disukai",
     });
     response.code(201);
     return response;
@@ -102,9 +101,7 @@ class AlbumsHandler {
 
     const response = h.response({
       status: "success",
-      data: {
-        likes: count,
-      },
+      data: { likes: count },
     });
     if (source === "cache") {
       response.header("X-Data-Source", "cache");

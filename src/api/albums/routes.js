@@ -1,5 +1,3 @@
-const path = require("path");
-
 const routes = (handler) => [
   { method: "POST", path: "/albums", handler: handler.postAlbumHandler },
   { method: "GET", path: "/albums/{id}", handler: handler.getAlbumByIdHandler },
@@ -9,7 +7,6 @@ const routes = (handler) => [
     path: "/albums/{id}",
     handler: handler.deleteAlbumByIdHandler,
   },
-  // Rute cover
   {
     method: "POST",
     path: "/albums/{id}/covers",
@@ -19,11 +16,10 @@ const routes = (handler) => [
         allow: "multipart/form-data",
         multipart: true,
         output: "stream",
-        maxBytes: 512000,
+        maxBytes: 512000, // 512KB
       },
     },
   },
-  // Rute likes
   {
     method: "POST",
     path: "/albums/{id}/likes",
